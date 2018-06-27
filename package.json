@@ -1,7 +1,10 @@
 {
   "name": "bring-m-h-api",
   "version": "0.0.0",
-  "private": true,
+  "private": false,
+  "repository": "https://github.com/alickbuscariolli/bmh-api.git",
+  "description": "bmh api",
+  "license": "UNLICENSED",
   "scripts": {
     "start": "supervisor ./bin/www"
   },

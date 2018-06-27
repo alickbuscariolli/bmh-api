@@ -56,5 +56,8 @@ app.use(function(err, req, res, next) {
   });
 });
 
+app.listen(process.env.PORT, process.env.IP, function() {
+  console.log("app listening!");
+});
 
 module.exports = app;

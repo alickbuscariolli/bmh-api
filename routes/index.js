@@ -3,7 +3,7 @@ const router = express.Router();
 const app = express();
 const pg = require('pg');
 const path = require('path');
-const connectionString = process.env.DATABASE_URL || 'postgres://alick:0A0D000B00@localhost:5432/bringmehome';
+const connectionString = 'postgres://postgres:Aligao123@localhost:5432/bmhc9';
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 
@@ -12,8 +12,14 @@ app.set('secret', 'dq89"#wud_981h3-du2h3d37a3A_SD_!#E_"#dsd');
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
-  res.render('index', { title: 'Express' });
+  res.render('index', { title: 'BMH API' });
 });
+
+// //CORS to avoid ports conflict
+// router.use(cors({
+//   origin: 'http://192.168.0.17:8100',
+//   credentials: true
+// }));
 
 //CORS to avoid ports conflict
 router.use(cors({
@@ -24,11 +30,7 @@ router.use(cors({
 //**** ITEM ****
 
 //Post Item
-router.post('/items', verifyToken, (req, res, next) => {
-  jwt.verify(req.token, 'secretkey', (err, authData) => {
-    if(err) {
-      res.sendStatus(403);
-    } else {
+router.post('/items', (req, res, next) => {
       const results = [];
       // Grab data from http request
       const data = {name: req.body.name,
@@ -61,11 +63,9 @@ router.post('/items', verifyToken, (req, res, next) => {
         // After all data is returned, close connection and return results
         query.on('end', () => {
           done();
-          return res.json({message: 'The item was added!', results, authData});
+          return res.json({message: 'The item was added!', results});
         });
       });
-    }
-  });
 
 });
 
@@ -73,7 +73,7 @@ router.post('/items', verifyToken, (req, res, next) => {
 router.get('/items', verifyToken, (req, res, next) => {
   jwt.verify(req.token, 'secretkey', (err, authData) => {
     if(err) {
-      res.sendStatus(403);
+      res.sendStatus({"code":403, "message": "sefodeu"});
     } else {
       const results = [];
       // Get a Postgres client from the connection pool
@@ -263,11 +263,11 @@ router.post('/login', (req, res, next) => {
             console.log(results);
         });
       } else if (row.password != data.password) {
-        // results.push({
-        //     "code":204,
-        //     "message":"Wrong password!"
-        //   });
-          res.status(401).json({code: 204, error: 'Invalid email or password'});
+        results.push({
+            "code":204,
+            "message":"Wrong password!"
+          });
+          //res.status(401).json({code: 204, error: 'Invalid email or password'});
       }
     });
     // After all data is returned, close connection and return results
