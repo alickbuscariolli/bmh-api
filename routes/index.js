@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const app = express();
 const pg = require('pg');
 const path = require('path');
 const connectionString = process.env.DATABASE_URL || 'postgres://alick:0A0D000B00@localhost:5432/bringmehome';
 const cors = require('cors');
-const jwt = require('jwt-simple');
+const jwt = require('jsonwebtoken');
+
+// Random secret key
+app.set('secret', 'dq89"#wud_981h3-du2h3d37a3A_SD_!#E_"#dsd');
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
@@ -20,65 +24,79 @@ router.use(cors({
 //**** ITEM ****
 
 //Post Item
-router.post('/items', (req, res, next) => {
-  const results = [];
-  // Grab data from http request
-  const data = {name: req.body.name, 
-                description: req.body.description, 
-                condition: req.body.condition, 
-                pickuplocation: req.body.pickuplocation, 
-                dayslisted: req.body.dayslisted, 
-                picturepath: req.body.picturepath, 
-                latitude: req.body.latitude, 
-                longitude: req.body.longitude,
-                user_id_fkey: req.body.user_id_fkey};
-  // Get a Postgres client from the connection pool
-  pg.connect(connectionString, (err, client, done) => {
-    // Handle connection errors
+router.post('/items', verifyToken, (req, res, next) => {
+  jwt.verify(req.token, 'secretkey', (err, authData) => {
     if(err) {
-      done();
-      console.log(err);
-      return res.status(500).json({success: false, data: err});
+      res.sendStatus(403);
+    } else {
+      const results = [];
+      // Grab data from http request
+      const data = {name: req.body.name,
+                    description: req.body.description,
+                    condition: req.body.condition,
+                    pickuplocation: req.body.pickuplocation,
+                    itemdeletedate: req.body.itemdeletedate,
+                    picturepath: req.body.picturepath,
+                    latitude: req.body.latitude,
+                    longitude: req.body.longitude,
+                    itemdonator: req.body.itemdonator,
+                    user_id_fkey: req.body.user_id_fkey};
+      // Get a Postgres client from the connection pool
+      pg.connect(connectionString, (err, client, done) => {
+        // Handle connection errors
+        if(err) {
+          done();
+          console.log(err);
+          return res.status(500).json({success: false, data: err});
+        }
+        // SQL Query > Insert Data
+        client.query('INSERT INTO items(name, description, condition, pickuplocation, itemcreatedate, itemdeletedate, picturepath, latitude, longitude, itemdonator, user_id_fkey) values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+        [data.name, data.description, data.condition, data.pickuplocation, new Date(), data.itemdeletedate, data.picturepath, data.latitude, data.longitude, data.itemdonator, data.user_id_fkey]);
+        // SQL Query > Select Data
+        const query = client.query('SELECT * FROM items ORDER BY id ASC');
+        // Stream results back one row at a time
+        query.on('row', (row) => {
+          results.push(row);
+        });
+        // After all data is returned, close connection and return results
+        query.on('end', () => {
+          done();
+          return res.json({message: 'The item was added!', results, authData});
+        });
+      });
     }
-    // SQL Query > Insert Data
-    client.query('INSERT INTO items(name, description, condition, pickuplocation, dayslisted, picturepath, latitude, longitude, user_id_fkey) values($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-    [data.name, data.description, data.condition, data.pickuplocation, data.dayslisted, data.picturepath, data.latitude, data.longitude, data.user_id_fkey]);
-    // SQL Query > Select Data
-    const query = client.query('SELECT * FROM items ORDER BY id ASC');
-    // Stream results back one row at a time
-    query.on('row', (row) => {
-      results.push(row);
-    });
-    // After all data is returned, close connection and return results
-    query.on('end', () => {
-      done();
-      return res.json(results);
-    });
   });
+
 });
 
-//Get Item
-router.get('/items', (req, res, next) => {
-  const results = [];
-  // Get a Postgres client from the connection pool
-  pg.connect(connectionString, (err, client, done) => {
-    // Handle connection errors
+//Get Items
+router.get('/items', verifyToken, (req, res, next) => {
+  jwt.verify(req.token, 'secretkey', (err, authData) => {
     if(err) {
-      done();
-      console.log(err);
-      return res.status(500).json({success: false, data: err});
+      res.sendStatus(403);
+    } else {
+      const results = [];
+      // Get a Postgres client from the connection pool
+      pg.connect(connectionString, (err, client, done) => {
+        // Handle connection errors
+        if(err) {
+          done();
+          console.log(err);
+          return res.status(500).json({success: false, data: err});
+        }
+        // SQL Query > Select Data
+        const query = client.query('SELECT * FROM items ORDER BY id ASC;');
+        // Stream results back one row at a time
+        query.on('row', (row) => {
+          results.push(row);
+        });
+        // After all data is returned, close connection and return results
+        query.on('end', () => {
+          done();
+          return res.json({ Message: 'List of Items', results, authData });
+        });
+      });
     }
-    // SQL Query > Select Data
-    const query = client.query('SELECT * FROM items ORDER BY id ASC;');
-    // Stream results back one row at a time
-    query.on('row', (row) => {
-      results.push(row);
-    });
-    // After all data is returned, close connection and return results
-    query.on('end', () => {
-      done();
-      return res.json(results);
-    });
   });
 });
 
@@ -88,13 +106,12 @@ router.put('/items/:item_id', (req, res, next) => {
   // Grab data from the URL parameters
   const id = req.params.item_id;
   // Grab data from http request
-  const data = {name: req.body.name, 
-                description: req.body.description, 
-                condition: req.body.condition, 
-                pickuplocation: req.body.pickuplocation, 
-                dayslisted: req.body.dayslisted, 
-                picturepath: req.body.picturepath, 
-                latitude: req.body.latitude, 
+  const data = {name: req.body.name,
+                description: req.body.description,
+                condition: req.body.condition,
+                pickuplocation: req.body.pickuplocation,
+                picturepath: req.body.picturepath,
+                latitude: req.body.latitude,
                 longitude: req.body.longitude};
   // Get a Postgres client from the connection pool
   pg.connect(connectionString, (err, client, done) => {
@@ -105,8 +122,8 @@ router.put('/items/:item_id', (req, res, next) => {
       return res.status(500).json({success: false, data: err});
     }
     // SQL Query > Update Data
-    client.query('UPDATE items SET name=($1), description=($2), condition=($3), pickuplocation=($4), dayslisted=($5), picturepath=($6), latitude=($7), longitude=($8) WHERE id=($9)',
-    [data.name, data.description, data.condition, data.pickuplocation, data.dayslisted, data.picturepath, data.latitude, data.longitude, id]);
+    client.query('UPDATE items SET name=($1), description=($2), condition=($3), pickuplocation=($4), picturepath=($7), latitude=($8), longitude=($9) WHERE id=($10)',
+    [data.name, data.description, data.condition, data.pickuplocation, data.picturepath, data.latitude, data.longitude, id]);
     // SQL Query > Select Data
     const query = client.query("SELECT * FROM items ORDER BY id ASC");
     // Stream results back one row at a time
@@ -150,12 +167,80 @@ router.delete('/items/:item_id', (req, res, next) => {
   });
 });
 
+//Report item
+
+router.post('/item/reports/:item_id', (req, res, next) => {
+  const results = [];
+  const id = req.params.item_id;
+
+  const data = {reports: req.body.reports};
+
+  pg.connect(connectionString, (err, client, done) => {
+    // Handle connection errors
+    if(err) {
+      done();
+      console.log(err);
+      return res.status(500).json({success: false, data: err});
+    }
+    client.query('INSERT INTO itemreports(reports, item_id_fkey) VALUES ($1,$2)', [data.reports, id]);
+    // SQL Query > Select Data
+    const query = client.query('SELECT * FROM itemreports ORDER BY id ASC');
+    // Stream results back one row at a time
+    query.on('row', (row) => {
+      results.push(row);
+    });
+    // After all data is returned, close connection and return results
+    query.on('end', () => {
+      done();
+      return res.json(results);
+    });
+  });
+});
+
+//Post Item Reports Number
+router.post('/item/reports/count/:item_id', (req, res, next) => {
+  const results = [];
+  const id = req.params.item_id;
+  const reportNumber = [];
+  pg.connect(connectionString, (err, client, done) => {
+    // Handle connection errors
+    if(err) {
+      done();
+      console.log(err);
+      return res.status(500).json({success: false, data: err});
+    }
+
+    //const query = client.query('SELECT items.*, count(reportitem.id) as reports FROM items inner join reporitems on items.id = reportsitens.itemid  group by items.id ORDER BY id ASC');
+
+    const query1 = client.query('SELECT COUNT(reports) FROM itemreports WHERE item_id_fkey=($1)', [id]);
+    query1.on('row', (row) => {
+      reportNumber.push(Number(row.count));
+      console.log(reportNumber[0]);
+      const query2 = client.query('UPDATE items SET reports=($1) WHERE id=($2)', [reportNumber[0], id]);
+    query2.on('row', (row) => {
+      results.push(row);
+    });
+    // After all data is returned, close connection and return results
+    query2.on('end', () => {
+      done();
+      return res.json(results);
+    });
+    });
+    // After all data is returned, close connection and return results
+    query1.on('end', () => {
+      done();
+    });
+
+  });
+
+});
+
 //**** USER ****
 
 //Login User
 router.post('/login', (req, res, next) => {
   const results = [];
-  const data = {email: req.body.email, 
+  const data = {email: req.body.email,
                 password: req.body.password};
   // Get a Postgres client from the connection pool
   pg.connect(connectionString, (err, client, done) => {
@@ -166,33 +251,31 @@ router.post('/login', (req, res, next) => {
       return res.status(500).json({success: false, data: err});
     }
     const query = client.query('SELECT * FROM users WHERE email=($1)',[data.email]);
-    // Stream results back one row at a time
-    // if (data.email !== query.user.email) {
-    //   console.log(query);
-    //   results.push({
-    //     "code:": 204,
-    //     "message": "Email not found"
-    //   });
-    // }
 
     query.on('row', (row) => {
       if (row.password == data.password) {
-        results.push({
-          "code": 200,
-          "message": "Success logged in!",
-          row});
-          console.log(results);
-      } else {
-        results.push({
-            "code":204,
-            "message":"Wrong password!"
-          }); 
+        jwt.sign({row}, 'secretkey', { expiresIn: '5h' }, (err, token) => {
+          results.push({
+            "code": 200,
+            "message": "Success logged in!",
+            token: "Bearer " + token
+          });
+            console.log(results);
+        });
+      } else if (row.password != data.password) {
+        // results.push({
+        //     "code":204,
+        //     "message":"Wrong password!"
+        //   });
+          res.status(401).json({code: 204, error: 'Invalid email or password'});
       }
     });
     // After all data is returned, close connection and return results
     query.on('end', () => {
       done();
-      if (results.code == undefined) {
+      console.log(results[0]);
+      if (results[0] == undefined) {
+        console.log('entrou');
         results.push({
           "code": 205,
           "message": "Wrong email!"
@@ -203,12 +286,56 @@ router.post('/login', (req, res, next) => {
   });
 });
 
+//User Session
+router.get('/session', (req, res) => {
+  let auth =  req.headers.authorization;
+
+  if(!auth || !auth.startsWith('Bearer')) {
+    return res.status(401).json({ error: 'JWT session is missing'});
+  } else {
+    auth = auth.split('Bearer').pop().trim();
+  }
+
+  jwt.verify(auth, 'secretkey', (err, data) => {
+    if (err) {
+      return res.status(401).json({code: 207, error: "Invalid session"});
+    }
+    res.send(data);
+  });
+
+  console.log(auth);
+});
+
+//Token Format
+//Authorization: Bearer <access_token>
+
+//Verify token function
+function verifyToken(req, res, next) {
+  //Get auth header value
+  const bearerHeader = req.headers['authorization'];
+  //Check if bearer is undefined
+  if(typeof bearerHeader !== 'undefined') {
+    //Split at the space
+    const bearer = bearerHeader.split(' ');
+    //Get token from array
+    const bearerToken = bearer[1];
+    //Set the token
+    req.token = bearerToken;
+    //Next middleware
+    next();
+  } else {
+    //Forbidden
+    res.sendStatus(403);
+  }
+}
+
 //Register User
 router.post('/register', (req, res, next) => {
   const results = [];
   // Grab data from http request
-  const data = {email: req.body.email, 
-                password: req.body.password};
+  const data = {email: req.body.email,
+                password: req.body.password,
+                fullname: req.body.fullname};
   // Get a Postgres client from the connection pool
   pg.connect(connectionString, (err, client, done) => {
     // Handle connection errors
@@ -217,11 +344,8 @@ router.post('/register', (req, res, next) => {
       console.log(err);
       return res.status(500).json({success: false, data: err});
     }
-    // SQL Query > Insert Data
-    client.query('INSERT INTO users(email, password) values($1, $2)',
-    [data.email, data.password]);
     // SQL Query > Select Data
-    const query = client.query('SELECT * FROM users ORDER BY id ASC');
+    const query = client.query('SELECT * FROM users WHERE email=($1)', [data.email]);
     // Stream results back one row at a time
     query.on('row', (row) => {
       results.push(row);
@@ -229,6 +353,21 @@ router.post('/register', (req, res, next) => {
     // After all data is returned, close connection and return results
     query.on('end', () => {
       done();
+      if (results.length > 0) {
+        console.log(results.length);
+        results.splice(0, results.length);
+        results.push({
+          "code": 205,
+          "message": "Email already exists!"
+        });
+      } else {
+        results.push({
+          "code": 200,
+          "message": "User created!"
+        });
+        client.query('INSERT INTO users(email, password, fullname) values($1, $2, $3)',
+    [data.email, data.password, data.fullname]);
+      }
       return res.json(results);
     });
   });
@@ -253,7 +392,7 @@ router.get('/user/items/:user_id', (req, res, next) => {
   const results = [];
 
   const id = req.params.user_id;
-  
+
   // Get a Postgres client from the connection pool
   pg.connect(connectionString, (err, client, done) => {
     // Handle connection errors
