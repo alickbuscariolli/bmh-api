@@ -6,6 +6,30 @@ const path = require('path');
 const connectionString = 'postgres://postgres:Aligao123@localhost:5432/bmhc9';
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const multer = require('multer');
+
+const MIME_TYPE_MAP = { 
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg'
+};
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const isValid = MIME_TYPE_MAP[file.mimetype];
+    let error = new Error("Invalid mime type");
+    if (isValid) {
+      error = null;
+    }
+    cb(error, "../backend/images");
+  },
+  filename: (req, file, cb) => {
+    const name = file.originalname.toLowerCase().split(' ').join('-');
+    const ext = MIME_TYPE_MAP[file.mimetype];
+    cb(null, name + '-' + Date.now() + '.' + ext);
+  }
+});
 
 // Random secret key
 app.set('secret', 'dq89"#wud_981h3-du2h3d37a3A_SD_!#E_"#dsd');
@@ -21,16 +45,28 @@ router.get('/', function(req, res, next) {
 //   credentials: true
 // }));
 
+// //CORS to avoid ports conflict
+// router.use(cors({
+//   origin: 'http://122.106.20.157:8100',
+//   credentials: true
+// }));
+
+// //CORS to avoid ports conflict
+// router.use(cors({
+//   origin: 'http://localhost:8100',
+//   credentials: true
+// }));
+
 //CORS to avoid ports conflict
 router.use(cors({
-  origin: 'http://localhost:8100',
+  origin: '*',
   credentials: true
 }));
 
 //**** ITEM ****
 
 //Post Item
-router.post('/items', (req, res, next) => {
+router.post('/items', multer(storage).single("image"), (req, res, next) => {
       const results = [];
       // Grab data from http request
       const data = {name: req.body.name,
@@ -85,7 +121,7 @@ router.get('/items', verifyToken, (req, res, next) => {
           return res.status(500).json({success: false, data: err});
         }
         // SQL Query > Select Data
-        const query = client.query('SELECT * FROM items ORDER BY id ASC;');
+        const query = client.query('SELECT * FROM items WHERE itemdeletedate > $1 ORDER BY id ASC;', [new Date()]);
         // Stream results back one row at a time
         query.on('row', (row) => {
           results.push(row);
@@ -122,7 +158,7 @@ router.put('/items/:item_id', (req, res, next) => {
       return res.status(500).json({success: false, data: err});
     }
     // SQL Query > Update Data
-    client.query('UPDATE items SET name=($1), description=($2), condition=($3), pickuplocation=($4), picturepath=($7), latitude=($8), longitude=($9) WHERE id=($10)',
+    client.query('UPDATE items SET name=($1), description=($2), condition=($3), pickuplocation=($4), picturepath=($5), latitude=($6), longitude=($7) WHERE id=($8)',
     [data.name, data.description, data.condition, data.pickuplocation, data.picturepath, data.latitude, data.longitude, id]);
     // SQL Query > Select Data
     const query = client.query("SELECT * FROM items ORDER BY id ASC");
@@ -182,7 +218,7 @@ router.post('/item/reports/:item_id', (req, res, next) => {
       console.log(err);
       return res.status(500).json({success: false, data: err});
     }
-    client.query('INSERT INTO itemreports(reports, item_id_fkey) VALUES ($1,$2)', [data.reports, id]);
+    client.query('INSERT INTO itemreports(reports, item_id_fkey, created_at) VALUES ($1,$2, $3)', [data.reports, id, new Date()]);
     // SQL Query > Select Data
     const query = client.query('SELECT * FROM itemreports ORDER BY id ASC');
     // Stream results back one row at a time
@@ -251,10 +287,9 @@ router.post('/login', (req, res, next) => {
       return res.status(500).json({success: false, data: err});
     }
     const query = client.query('SELECT * FROM users WHERE email=($1)',[data.email]);
-
     query.on('row', (row) => {
-      if (row.password == data.password) {
-        jwt.sign({row}, 'secretkey', { expiresIn: '5h' }, (err, token) => {
+      if (validPassword(data.password, row.password)) {
+        jwt.sign({row}, 'secretkey', (err, token) => {
           results.push({
             "code": 200,
             "message": "Success logged in!",
@@ -334,8 +369,13 @@ router.post('/register', (req, res, next) => {
   const results = [];
   // Grab data from http request
   const data = {email: req.body.email,
-                password: req.body.password,
-                fullname: req.body.fullname};
+                password: generateHash(req.body.password),
+                fullname: req.body.fullname,
+                gender: req.body.gender,
+                rating: -1,
+                premium: false,
+                created_at: new Date()
+  };
   // Get a Postgres client from the connection pool
   pg.connect(connectionString, (err, client, done) => {
     // Handle connection errors
@@ -365,10 +405,35 @@ router.post('/register', (req, res, next) => {
           "code": 200,
           "message": "User created!"
         });
-        client.query('INSERT INTO users(email, password, fullname) values($1, $2, $3)',
-    [data.email, data.password, data.fullname]);
+        client.query('INSERT INTO users(email, password, fullname, gender, rating, premium, created_at) values($1, $2, $3, $4, $5, $6, $7)',
+    [data.email, data.password, data.fullname, data.gender, data.rating, data.premium, data.created_at]);
       }
       return res.json(results);
+    });
+  });
+});
+
+//Get all users
+router.get('/usrss', (req, res, next) => {
+  const results = [];
+  
+  pg.connect(connectionString, (err, client, done) => {
+    // Handle connection errors
+    if(err) {
+      done();
+      console.log(err);
+      return res.status(500).json({success: false, data: err});
+    }
+    // SQL Query > Select Data
+    const query = client.query('SELECT * FROM users');
+    // Stream results back one row at a time
+    query.on('row', (row) => {
+      results.push(row);
+    });
+    // After all data is returned, close connection and return results
+    query.on('end', () => {
+      done();
+      return res.json({ Message: 'List of Users', results });
     });
   });
 });
@@ -402,8 +467,7 @@ router.get('/user/items/:user_id', (req, res, next) => {
       return res.status(500).json({success: false, data: err});
     }
     // SQL Query > Select Data
-    //const query =client.query('SELECT i.items, u.users FROM items i, users u WHERE i.user_id_fkey=($1)', [id]);
-    const query = client.query('SELECT * FROM items i WHERE i.user_id_fkey=($1)', [id]);
+    const query = client.query('SELECT * FROM items i WHERE i.user_id_fkey=($1) AND itemdeletedate > $2 ', [id, new Date()]);
     // Stream results back one row at a time
     query.on('row', (row) => {
       results.push(row);
@@ -415,5 +479,14 @@ router.get('/user/items/:user_id', (req, res, next) => {
     });
   });
 });
+
+//
+function generateHash (password) {
+  return bcrypt.hashSync(password, bcrypt.genSaltSync(9));
+};
+
+function validPassword (password, password2) {
+  return bcrypt.compareSync(password, password2);
+};
 
 module.exports = router;
