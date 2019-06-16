@@ -109,7 +109,7 @@ router.post('/items', multer(storage).single("image"), (req, res, next) => {
 router.get('/items', verifyToken, (req, res, next) => {
   jwt.verify(req.token, 'secretkey', (err, authData) => {
     if(err) {
-      res.sendStatus({"code":403, "message": "sefodeu"});
+      res.sendStatus({"code":403, "message": "Forbidden"});
     } else {
       const results = [];
       // Get a Postgres client from the connection pool
@@ -289,6 +289,11 @@ router.post('/login', (req, res, next) => {
     const query = client.query('SELECT * FROM users WHERE email=($1)',[data.email]);
     query.on('row', (row) => {
       if (validPassword(data.password, row.password)) {
+        const user = {
+          id: row.id,
+          email: row.email
+        }
+        console.log("User id: ", user.id, " User Email: ", user.email);
         jwt.sign({row}, 'secretkey', (err, token) => {
           results.push({
             "code": 200,
@@ -478,6 +483,79 @@ router.get('/user/items/:user_id', (req, res, next) => {
       return res.json(results);
     });
   });
+});
+
+//Add Dibs
+router.post('/dibs', verifyToken, (req, res, next) => {
+  jwt.verify(req.token, 'secretkey', (err, authData) => {
+    if(err) {
+      res.sendStatus({"code":403, "message": "Forbidden"});
+    } else {
+      const results = [];
+      const user_id = authData.row.id;
+      const item_id = req.body[0].item_id;
+      const created_at = new Date();
+      console.log(req.body[0].user_id);
+      
+      // Get a Postgres client from the connection pool
+      pg.connect(connectionString, (err, client, done) => {
+        // Handle connection errors
+        if(err) {
+          done();
+          console.log(err);
+          return res.status(500).json({success: false, data: err});
+        }
+        // SQL Query > Select Data
+        const query = client.query('INSERT INTO dibs (user_id, item_id, created_at) VALUES ($1, $2, $3)', [user_id, item_id, created_at]);
+        // Stream results back one row at a time
+        query.on('row', (row) => {
+          results.push(row);
+        });
+        // After all data is returned, close connection and return results
+        query.on('end', () => {
+          done();
+          results.push({
+            "code": 200,
+            "message": "Dibs created!"
+          });
+          return res.json(results);
+        });
+      });
+    }
+  });
+});
+
+//Get user Dibs
+router.get('/dibs', verifyToken, (req,res,next) => {
+    jwt.verify(req.token, 'secretkey', (err, authData) => {
+      if (err) {
+        res.sendStatus({"code":403, "message": "Forbidden"});
+      } else {
+        const results = [];
+        const user_id = authData.row.id;
+        
+        pg.connect(connectionString, (err, client, done) => {
+          // Handle connection errors
+          if(err) {
+            done();
+            console.log(err);
+            return res.status(500).json({success: false, data: err});
+          }
+          // SQL Query > Select Data
+          const query = client.query('SELECT name, description, pickuplocation, picturepath FROM items INNER JOIN dibs ON items.id = dibs.item_id WHERE dibs.user_id = $1 AND itemdeletedate > $2 ORDER BY created_at DESC', [user_id, new Date()]);
+          
+          // Stream results back one row at a time
+          query.on('row', (row) => {
+            results.push(row);
+          });
+          // After all data is returned, close connection and return results
+          query.on('end', () => {
+            done();
+            return res.json({"code": 200, "results": results});
+          });
+        });
+      }
+    });
 });
 
 //
